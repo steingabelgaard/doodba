@@ -1,0 +1,18 @@
+version: "2.1"
+services:
+  odoo:
+    build:
+      context: ./
+      args:
+        COMPILE: "false"
+        ODOO_VERSION: $ODOO_MINOR
+        WITHOUT_DEMO: "false"
+    environment:
+      PYTHONOPTIMIZE: ""
+      UNACCENT: "false"
+    entrypoint: "" # we are not using odoo but only checking the repo state here, this skips starting the db
+    volumes:
+      - filestore:/var/lib/odoo:z
+
+volumes:
+  filestore:

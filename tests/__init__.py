@@ -5,6 +5,7 @@
 Each test must be a valid docker-compose.yaml file with a ``odoo`` service.
 """
 import logging
+import os
 import unittest
 from itertools import product
 from os import environ
@@ -613,6 +614,75 @@ class ScaffoldingCase(unittest.TestCase):
                     " | wc -l) &&"
                     " [[ $files == 0 ]]",
                 ),
+            )
+
+    def test_repo_merge(self):
+        symlink_dir = join(SCAFFOLDINGS_DIR, "repo_merge")
+        for sub_env in matrix():
+            self.compose_test(
+                symlink_dir,
+                sub_env,
+                (
+                    "git",
+                    "--git-dir=/opt/odoo/custom/src/odoo/.git",
+                    "--no-pager",
+                    "log",
+                    "-n",
+                    "2",
+                ),
+                # make sure the git log contains a merge commit signed by $GIT_AUTHOR_NAME (otherwise ff was enabled
+                # and we did not test the merge commits)
+                (
+                    "bash",
+                    "-c",
+                    "git --git-dir=/opt/odoo/custom/src/odoo/.git log -n 1"
+                    " | grep 'docker-odoo <https://hub.docker.com/r/tecnativa/odoo>'",
+                ),
+            )
+
+    def test_repo_merge_aggregate_permissions(self):
+        symlink_dir = join(SCAFFOLDINGS_DIR, "repo_merge")
+        for sub_env in matrix():
+            self.compose_test(
+                symlink_dir,
+                dict(
+                    sub_env,
+                    COMPOSE_FILE="setup-devel.yaml",
+                    UID=str(os.getuid()),
+                    GID=str(os.getgid()),
+                ),
+                # prepare repos.yaml to be non fast forward
+                ("/opt/odoo/custom/build.d/099-git_merge_no_ff",),
+                # autoaggregate as odoo:odoo to check if merges also work
+                ("autoaggregate",),
+                (
+                    "git",
+                    "--git-dir=/opt/odoo/custom/src/odoo/.git",
+                    "--no-pager",
+                    "log",
+                    "-n",
+                    "2",
+                ),
+                # make sure the git log contains a merge commit signed by $GIT_AUTHOR_NAME (otherwise ff was enabled
+                # and we did not test the merge commits)
+                (
+                    "bash",
+                    "-c",
+                    "git --git-dir=/opt/odoo/custom/src/odoo/.git log -n 1"
+                    " | grep 'docker-odoo <https://hub.docker.com/r/tecnativa/odoo>'",
+                ),
+            )
+
+    def test_aggregate_permissions(self):
+        symlink_dir = join(SCAFFOLDINGS_DIR, "aggregate_permissions")
+        for sub_env in matrix():
+            self.compose_test(
+                symlink_dir,
+                dict(sub_env, UID=str(os.getuid()), GID=str(os.getgid())),
+                ("autoaggregate",),
+                # test that permissions are set in a way that enables a second autoaggregation after the first one
+                # e.g. when used in dev we update the source code sometimes/daily
+                ("autoaggregate",),
             )
 
 
