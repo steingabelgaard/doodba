@@ -1,4 +1,4 @@
-FROM python:3.5-stretch AS base
+FROM python:3.7-stretch AS base
 
 EXPOSE 8069 8072
 
