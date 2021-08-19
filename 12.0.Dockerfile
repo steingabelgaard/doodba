@@ -2,6 +2,7 @@ FROM python:3.7-stretch AS base
 
 EXPOSE 8069 8072
 
+ARG GEOIP_UPDATER_VERSION=4.1.5
 ARG MQT=https://github.com/OCA/maintainer-quality-tools.git
 ARG WKHTMLTOPDF_VERSION=0.12.5
 ARG WKHTMLTOPDF_CHECKSUM='1140b0ab02aa6e17346af2f14ed0de807376de475ba90e1db3975f112fbd20bb'
@@ -9,6 +10,8 @@ ENV DB_FILTER=.* \
     DEPTH_DEFAULT=1 \
     DEPTH_MERGE=100 \
     EMAIL=https://hub.docker.com/r/tecnativa/odoo \
+    GEOIP_ACCOUNT_ID="" \
+    GEOIP_LICENSE_KEY="" \
     GIT_AUTHOR_NAME=docker-odoo \
     INITIAL_LANG="" \
     LC_ALL=C.UTF-8 \
@@ -19,6 +22,8 @@ ENV DB_FILTER=.* \
     PIP_NO_CACHE_DIR=0 \
     PTVSD_ARGS="--host 0.0.0.0 --port 6899 --wait --multiprocess" \
     PTVSD_ENABLE=0 \
+    DEBUGPY_ARGS="--listen 0.0.0.0:6899 --wait-for-client" \
+    DEBUGPY_ENABLE=0 \
     PUDB_RDB_HOST=0.0.0.0 \
     PUDB_RDB_PORT=6899 \
     PYTHONOPTIMIZE=1 \
@@ -37,7 +42,7 @@ RUN apt-get -qq update \
         chromium \
         ffmpeg \
         fonts-liberation2 \
-        gettext-base \
+        gettext \
         gnupg2 \
         locales-all \
         nano \
@@ -56,6 +61,9 @@ RUN apt-get -qq update \
     && apt-get install -yqq --no-install-recommends ./wkhtmltox.deb \
     && rm wkhtmltox.deb \
     && wkhtmltopdf --version \
+    && curl --silent -L --output geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb https://github.com/maxmind/geoipupdate/releases/download/v${GEOIP_UPDATER_VERSION}/geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
+    && dpkg -i geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
+    && rm geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
     && rm -Rf /var/lib/apt/lists/* /tmp/*
 
 # Special case to get latest Less
@@ -67,24 +75,33 @@ RUN ln -s /usr/bin/nodejs /usr/local/bin/node \
 WORKDIR /opt/odoo
 RUN pip install \
         astor \
-        click-odoo-contrib \
+        # Install fix from https://github.com/acsone/click-odoo-contrib/pull/93
+        git+https://github.com/Tecnativa/click-odoo-contrib.git@fix-active-modules-hashing \
         git-aggregator \
-        pg_activity \
+        "pg_activity<2.0.0" \
+        plumbum \
         ptvsd \
+        debugpy \
+        pydevd-odoo \
         pudb \
         watchdog \
         wdb \
+        geoip2 \
+        inotify \
     && sync
 COPY bin-deprecated/* bin/* /usr/local/bin/
 COPY lib/doodbalib /usr/local/lib/python3.7/site-packages/doodbalib
 COPY build.d common/build.d
 COPY conf.d common/conf.d
 COPY entrypoint.d common/entrypoint.d
-RUN mkdir -p auto/addons custom/src/private \
+RUN mkdir -p auto/addons auto/geoip custom/src/private \
     && ln /usr/local/bin/direxec common/entrypoint \
     && ln /usr/local/bin/direxec common/build \
     && chmod -R a+rx common/entrypoint* common/build* /usr/local/bin \
     && chmod -R a+rX /usr/local/lib/python3.7/site-packages/doodbalib \
+    && mv /etc/GeoIP.conf /opt/odoo/auto/geoip/GeoIP.conf \
+    && ln -s /opt/odoo/auto/geoip/GeoIP.conf /etc/GeoIP.conf \
+    && sed -i 's/.*DatabaseDirectory .*$/DatabaseDirectory \/opt\/odoo\/auto\/geoip\//g' /opt/odoo/auto/geoip/GeoIP.conf \
     && sync
 
 # Doodba-QA dependencies in a separate virtualenv
@@ -95,9 +112,9 @@ RUN python -m venv --system-site-packages /qa/venv \
         click \
         coverage \
         flake8 \
-        pylint-odoo \
+        git+https://github.com/OCA/pylint-odoo.git@refs/pull/329/head \
         six \
-    && npm install --loglevel error --prefix /qa eslint \
+    && npm install --loglevel error --prefix /qa 'eslint@<7' \
     && deactivate \
     && mkdir -p /qa/artifacts \
     && git clone --depth 1 $MQT /qa/mqt
@@ -132,6 +149,18 @@ LABEL org.label-schema.schema-version="$VERSION" \
 
 # Onbuild version, with all the magic
 FROM base AS onbuild
+
+# Enable setting custom uids for odoo user during build of scaffolds
+ONBUILD ARG UID=1000
+ONBUILD ARG GID=1000
+
+# Enable Odoo user and filestore
+ONBUILD RUN groupadd -g $GID odoo -o \
+    && useradd -l -md /home/odoo -s /bin/false -u $UID -g $GID odoo \
+    && mkdir -p /var/lib/odoo \
+    && chown -R odoo:odoo /var/lib/odoo /qa/artifacts \
+    && chmod a=rwX /qa/artifacts \
+    && sync
 
 # Subimage triggers
 ONBUILD ENTRYPOINT ["/opt/odoo/common/entrypoint"]
@@ -180,19 +209,7 @@ ONBUILD ENV ADMIN_PASSWORD="$ADMIN_PASSWORD" \
             EMAIL_FROM="$EMAIL_FROM" \
             WITHOUT_DEMO="$WITHOUT_DEMO"
 ONBUILD ARG LOCAL_CUSTOM_DIR=./custom
-ONBUILD COPY $LOCAL_CUSTOM_DIR /opt/odoo/custom
-
-# Enable setting custom uids for odoo user during build of scaffolds
-ONBUILD ARG UID=1000
-ONBUILD ARG GID=1000
-
-# Enable Odoo user and filestore
-ONBUILD RUN groupadd -g $GID odoo -o \
-    && useradd -l -md /home/odoo -s /bin/false -u $UID -g $GID odoo \
-    && mkdir -p /var/lib/odoo \
-    && chown -R odoo:odoo /var/lib/odoo /qa/artifacts \
-    && chmod a=rwX /qa/artifacts \
-    && sync
+ONBUILD COPY --chown=root:odoo $LOCAL_CUSTOM_DIR /opt/odoo/custom
 
 # https://docs.python.org/3/library/logging.html#levels
 ONBUILD ARG LOG_LEVEL=INFO
@@ -200,6 +217,7 @@ ONBUILD RUN mkdir -p /opt/odoo/custom/ssh \
             && ln -s /opt/odoo/custom/ssh ~root/.ssh \
             && chmod -R u=rwX,go= /opt/odoo/custom/ssh \
             && sync
+ONBUILD ARG DB_VERSION=latest
 ONBUILD RUN /opt/odoo/common/build && sync
 ONBUILD VOLUME ["/var/lib/odoo"]
 ONBUILD USER odoo
