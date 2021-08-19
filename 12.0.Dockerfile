@@ -55,7 +55,7 @@ RUN apt-get -qq update \
     && curl https://bootstrap.pypa.io/get-pip.py | python3 /dev/stdin \
     && curl -sL https://deb.nodesource.com/setup_8.x | bash - \
     && apt-get update \
-    && apt-get install -yqq --no-install-recommends nodejs postgresql-client \
+    && apt-get install -yqq --no-install-recommends nodejs \
     && curl -SLo wkhtmltox.deb https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/${WKHTMLTOPDF_VERSION}/wkhtmltox_${WKHTMLTOPDF_VERSION}-1.stretch_amd64.deb \
     && echo "${WKHTMLTOPDF_CHECKSUM}  wkhtmltox.deb" | sha256sum -c - \
     && apt-get install -yqq --no-install-recommends ./wkhtmltox.deb \
@@ -108,6 +108,8 @@ RUN mkdir -p auto/addons auto/geoip custom/src/private \
 COPY qa /qa
 RUN python -m venv --system-site-packages /qa/venv \
     && . /qa/venv/bin/activate \
+    # HACK: Upgrade pip: higher version needed to install pyproject.toml based packages
+    && pip install -U pip \
     && pip install --no-cache-dir \
         click \
         coverage \
