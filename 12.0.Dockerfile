@@ -39,6 +39,7 @@ ENV DB_FILTER=.* \
 RUN apt-get -qq update \
     && apt-get -yqq upgrade \
     && apt-get install -yqq --no-install-recommends \
+        curl \
         chromium \
         ffmpeg \
         fonts-liberation2 \
