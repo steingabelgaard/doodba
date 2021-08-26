@@ -37,40 +37,34 @@ ENV DB_FILTER=.* \
 # Other requirements and recommendations to run Odoo
 # See https://github.com/$ODOO_SOURCE/blob/$ODOO_VERSION/debian/control
 RUN apt-get -qq update \
-    && apt-get -yqq upgrade \
     && apt-get install -yqq --no-install-recommends \
         curl \
+    && curl -SLo wkhtmltox.deb https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/${WKHTMLTOPDF_VERSION}/wkhtmltox_${WKHTMLTOPDF_VERSION}-1.stretch_amd64.deb \
+    && echo "${WKHTMLTOPDF_CHECKSUM}  wkhtmltox.deb" | sha256sum -c - \
+    && apt-get install -yqq --no-install-recommends \
+        ./wkhtmltox.deb \
         chromium \
         ffmpeg \
         fonts-liberation2 \
         gettext \
+        git \
         gnupg2 \
         locales-all \
         nano \
-        ruby \
+        npm \
+        openssh-client \
         telnet \
         vim \
         zlibc \
     && echo 'deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main' >> /etc/apt/sources.list.d/postgresql.list \
     && curl -SL https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
-    && curl https://bootstrap.pypa.io/get-pip.py | python3 /dev/stdin \
-    && curl -sL https://deb.nodesource.com/setup_8.x | bash - \
     && apt-get update \
-    && apt-get install -yqq --no-install-recommends nodejs \
-    && curl -SLo wkhtmltox.deb https://github.com/wkhtmltopdf/wkhtmltopdf/releases/download/${WKHTMLTOPDF_VERSION}/wkhtmltox_${WKHTMLTOPDF_VERSION}-1.stretch_amd64.deb \
-    && echo "${WKHTMLTOPDF_CHECKSUM}  wkhtmltox.deb" | sha256sum -c - \
-    && apt-get install -yqq --no-install-recommends ./wkhtmltox.deb \
-    && rm wkhtmltox.deb \
-    && wkhtmltopdf --version \
     && curl --silent -L --output geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb https://github.com/maxmind/geoipupdate/releases/download/v${GEOIP_UPDATER_VERSION}/geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
     && dpkg -i geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
     && rm geoipupdate_${GEOIP_UPDATER_VERSION}_linux_amd64.deb \
-    && rm -Rf /var/lib/apt/lists/* /tmp/*
-
-# Special case to get latest Less
-RUN ln -s /usr/bin/nodejs /usr/local/bin/node \
-    && npm install -g less \
-    && rm -Rf ~/.npm /tmp/*
+    && apt-get autopurge -yqq \
+    && rm -Rf wkhtmltox.deb /var/lib/apt/lists/* /tmp/* \
+    && sync
 
 # Other facilities
 WORKDIR /opt/odoo
